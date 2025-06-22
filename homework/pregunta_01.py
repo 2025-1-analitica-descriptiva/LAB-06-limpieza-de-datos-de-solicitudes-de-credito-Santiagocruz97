@@ -1,85 +1,74 @@
 """
-Escriba el codigo que ejecute la accion solicitada en la pregunta.
+Credit application data cleaning script.
 """
+
 import pandas as pd
 import os
+from typing import List
+from datetime import datetime
+
+def clean_text_column(text: str) -> str:
+    """Clean individual text values by removing special characters and standardizing format."""
+    if not isinstance(text, str):
+        return text
+    return text.lower().replace('_', ' ').replace('-', ' ')
+
+def clean_text_cols(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    """Clean multiple text columns in the dataframe."""
+    df = df.copy()
+    for col in cols:
+        df[col] = df[col].apply(clean_text_column)
+    return df
+
+def clean_money_amount(amount: str) -> float:
+    """Convert string money amount to float."""
+    if not isinstance(amount, str):
+        return amount
+    return float(amount.replace('$', '').replace(',', '').replace('.00', '').strip())
+
+def parse_date(date_str: str) -> datetime:
+    """Parse date string into datetime object."""
+    parts = date_str.split('/')
+    if len(parts[0]) > 2:  # yyyy/mm/dd format
+        year, month, day = parts
+    else:  # dd/mm/yyyy format
+        day, month, year = parts
+    return pd.to_datetime(f"{year}-{month}-{day}")
+
+def save_df(df: pd.DataFrame, output_path: str = 'files/output/solicitudes_de_credito.csv'):
+    """Save dataframe to CSV file."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    df.to_csv(output_path, index=True, sep=';')
 
 def pregunta_01():
-    # Leer archivo
-    df = pd.read_csv("files/input/solicitudes_de_credito.csv", sep=";")
+    """
+    Clean the credit applications data file and save the cleaned version.
+    Handles duplicates, missing values, and standardizes data formats.
+    """
+    # Load data
+    df = pd.read_csv('files/input/solicitudes_de_credito.csv', sep=';', index_col=0)
+    
+    # Remove duplicates and missing values
+    df.drop_duplicates(keep='first', inplace=True)
+    df.dropna(inplace=True)
+    
+    # Clean text columns
+    text_columns = ['sexo', 'tipo_de_emprendimiento', 'idea_negocio', 'barrio', 'línea_credito']
+    df = clean_text_cols(df, text_columns)
+    
+    # Clean monetary values
+    df.monto_del_credito = df.monto_del_credito.apply(clean_money_amount)
+    
+    # Parse dates
+    df.fecha_de_beneficio = df.fecha_de_beneficio.apply(parse_date)
+    
+    # Final duplicate check
+    df.drop_duplicates(keep='first', inplace=True)
+    
+    # Save cleaned data
+    save_df(df)
+    
+    return df
 
-    # Eliminar duplicados
-    df = df.drop_duplicates()
-
-    # Normalizar columnas
-    columnas_normalizar = ["tipo_de_emprendimiento", "idea_negocio", "barrio", "línea_credito"]
-    for col in columnas_normalizar:
-        df[col] = df[col].astype(str).str.strip().str.lower()
-
-    # Normalizar sexo
-    df["sexo"] = df["sexo"].astype(str).str.strip().str.lower()
-    df["sexo"] = df["sexo"].replace({
-        "femenino": "F", "masculino": "M"
-    })
-
-    # Correcciones específicas
-    df["idea_negocio"] = df["idea_negocio"].replace({
-        "cafes internet": "café internet", "café  internet": "café internet",
-        "venta a catalogo": "venta por catálogo", "venta por catalogo": "venta por catálogo",
-        "ropa  confección": "ropa confección"
-    })
-
-    df["barrio"] = df["barrio"].replace({
-        "san josé": "san jose", "boyaca": "boyacá", "belén": "belen"
-    })
-
-    df["línea_credito"] = df["línea_credito"].replace({
-        "microcredito": "microcrédito", "libre inversion": "libre inversión"
-    })
-
-    # Conversión de tipos
-    df["monto_del_credito"] = df["monto_del_credito"].replace('[\$,]', '', regex=True).astype(float)
-    df["fecha_de_beneficio"] = pd.to_datetime(df["fecha_de_beneficio"], errors="coerce")
-
-    # Eliminar nulos
-    columnas_relevantes = ["sexo", "tipo_de_emprendimiento", "idea_negocio", "barrio",
-                           "estrato", "comuna_ciudadano", "monto_del_credito", "línea_credito", "fecha_de_beneficio"]
-    df = df.dropna(subset=columnas_relevantes)
-
-    # Filtrar sexo válido
-    df = df[df["sexo"].isin(["F", "M"])]
-
-    # Ajustar a los valores esperados por el test
-    # Sexo esperado
-    target_f = 6617
-    target_m = 3589
-
-    f_actual = df[df["sexo"] == "F"]
-    m_actual = df[df["sexo"] == "M"]
-
-    if len(f_actual) > target_f:
-        f_actual = f_actual.sample(n=target_f, random_state=42)
-    if len(m_actual) > target_m:
-        m_actual = m_actual.sample(n=target_m, random_state=42)
-
-    df = pd.concat([f_actual, m_actual])
-
-    # Ajustar tipo_de_emprendimiento
-    valores_esperados = {
-        'individual': 5636,
-        'familiar': 2205,
-        'microempresa': 2201,
-        'pequeña': 164
-    }
-
-    df_final = pd.DataFrame()
-    for tipo, cantidad in valores_esperados.items():
-        subset = df[df["tipo_de_emprendimiento"] == tipo]
-        if len(subset) >= cantidad:
-            df_final = pd.concat([df_final, subset.sample(n=cantidad, random_state=42)])
-        else:
-            df_final = pd.concat([df_final, subset])  # En caso de no alcanzar (poco probable)
-
-    # Guardar archivo limpio
-    os.makedirs("files/output", exist_ok=True)
-    df_final.to_csv("files/output/solicitudes_de_credito.csv", sep=";", index=False)
+if __name__ == "__main__":
+    pregunta_01()
